@@ -1,172 +1,32 @@
-name: بناء محرر محمد القاضي الشامل
+plugins {
+    id 'com.android.application'
+}
 
-on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
+android {
+    namespace 'com.mohammad.alqadi.editor'
+    compileSdk 35
 
-jobs:
-  build:
-    runs-on: ubuntu-latest
+    defaultConfig {
+        applicationId 'com.mohammad.alqadi.editor'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+    }
 
-    steps:
-      - name: جلب المشروع
-        uses: actions/checkout@v4
+    buildTypes {
+        release {
+            minifyEnabled false
+            shrinkResources false
+        }
+    }
+}
 
-      - name: إعداد Java 17
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
+configurations.all {
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk7'
+    exclude group: 'org.jetbrains.kotlin', module: 'kotlin-stdlib-jdk8'
+}
 
-      - name: إعداد Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: تثبيت Android SDK
-        run: |
-          sdkmanager --licenses >/dev/null || true
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
-
-      - name: فك ملف ZIP
-        run: |
-          set -e
-
-          ZIP_FILE="$(find . -maxdepth 1 -type f -name '*.zip' | head -n 1)"
-
-          if [ -z "$ZIP_FILE" ]; then
-            echo "لم يتم العثور على ملف ZIP"
-            exit 1
-          fi
-
-          echo "ملف ZIP: $ZIP_FILE"
-
-          rm -rf extracted
-          mkdir -p extracted
-
-          unzip -q "$ZIP_FILE" -d extracted
-
-          PROJECT_DIR="$(find extracted -type f -name 'settings.gradle' -printf '%h\n' | head -n 1)"
-
-          if [ -z "$PROJECT_DIR" ]; then
-            echo "لم يتم العثور على مشروع Android داخل ZIP"
-            find extracted -maxdepth 5 -type f | head -100
-            exit 1
-          fi
-
-          echo "مجلد المشروع: $PROJECT_DIR"
-          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
-
-      - name: فحص ملفات المشروع
-        run: |
-          set -e
-
-          test -f "$PROJECT_DIR/settings.gradle"
-          test -f "$PROJECT_DIR/build.gradle"
-          test -f "$PROJECT_DIR/app/build.gradle"
-          test -f "$PROJECT_DIR/app/src/main/AndroidManifest.xml"
-          test -f "$PROJECT_DIR/app/src/main/java/com/mohammad/alqadi/editor/MainActivity.java"
-          test -f "$PROJECT_DIR/app/src/main/res/layout/activity_main.xml"
-
-          echo "فحص ملفات المشروع ناجح"
-
-      - name: تثبيت Gradle 8.10.2
-        run: |
-          set -e
-
-          wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
-          unzip -q gradle-8.10.2-bin.zip
-
-          echo "$GITHUB_WORKSPACE/gradle-8.10.2/bin" >> "$GITHUB_PATH"
-
-          gradle --version
-
-      - name: فحص معرفات الواجهة
-        run: |
-          python3 - <<'PY'
-          import re
-          from pathlib import Path
-          import os
-
-          project = Path(os.environ["PROJECT_DIR"])
-
-          java = (
-              project /
-              "app/src/main/java/com/mohammad/alqadi/editor/MainActivity.java"
-          ).read_text(encoding="utf-8")
-
-          xml = (
-              project /
-              "app/src/main/res/layout/activity_main.xml"
-          ).read_text(encoding="utf-8")
-
-          java_ids = set(
-              re.findall(r'R\.id\.([A-Za-z0-9_]+)', java)
-          )
-
-          xml_ids = set(
-              re.findall(r'android:id="@\+id/([A-Za-z0-9_]+)"', xml)
-          )
-
-          missing = sorted(java_ids - xml_ids)
-
-          if missing:
-              print("معرفات مفقودة:")
-              print("\n".join(missing))
-              raise SystemExit(1)
-
-          print("فحص معرفات الواجهة ناجح")
-          print("عدد المعرفات:", len(java_ids))
-          PY
-
-      - name: بناء APK
-        id: build
-        working-directory: ${{ env.PROJECT_DIR }}
-        continue-on-error: true
-        run: |
-          set +e
-
-          gradle --no-daemon --stacktrace :app:assembleDebug 2>&1 | tee build.log
-
-          CODE=${PIPESTATUS[0]}
-
-          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
-
-          exit 0
-      - name: عرض سبب خطأ البناء
-        if: steps.build.outputs.exit_code != '0'
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          echo "========== سبب فشل البناء =========="
-          grep -n -E "FAILURE:|What went wrong|Caused by:|error:|Error:" build.log | head -50 || true
-          echo "========== آخر 80 سطرًا =========="
-          tail -80 build.log
-      - name: رفع سجل البناء
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: سجل-خطأ-البناء
-          path: ${{ env.PROJECT_DIR }}/build.log
-          if-no-files-found: warn
-
-      - name: التحقق من APK
-        if: steps.build.outputs.exit_code == '0'
-        working-directory: ${{ env.PROJECT_DIR }}
-        run: |
-          test -s app/build/outputs/apk/debug/app-debug.apk
-          echo "تم إنشاء APK بنجاح"
-
-      - name: رفع APK
-        if: steps.build.outputs.exit_code == '0'
-        uses: actions/upload-artifact@v4
-        with:
-          name: محرر-محمد-القاضي-الشامل-APK
-          path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
-
-      - name: إظهار نتيجة البناء
-        if: steps.build.outputs.exit_code != '0'
-        run: |
-          echo "فشل بناء APK"
-          echo "رمز الخطأ: ${{ steps.build.outputs.exit_code }}"
-          exit 1
+dependencies {
+    implementation 'androidx.appcompat:appcompat:1.7.0'
+}
