@@ -131,7 +131,30 @@ jobs:
           test -s app/build/outputs/apk/debug/app-debug.apk
           echo "تم إنشاء APK بنجاح"
 
-      - name: رفع APK
+      -        - name: بناء APK
+          id: build
+          working-directory: ${{ env.PROJECT_DIR }}
+          continue-on-error: true
+          run: |
+            set +e
+            gradle --no-daemon --stacktrace :app:assembleDebug 2>&1 | tee build.log
+            CODE=${PIPESTATUS[0]}
+            echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+            exit 0
+
+        - name: رفع سجل الخطأ
+          if: always()
+          uses: actions/upload-artifact@v4
+          with:
+            name: سجل-خطأ-البناء
+            path: ${{ env.PROJECT_DIR }}/build.log
+            if-no-files-found: warn
+
+        - name: إيقاف البناء إذا فشل Gradle
+          if: steps.build.outputs.exit_code != '0'
+          run: |
+            echo "Gradle فشل برمز: ${{ steps.build.outputs.exit_code }}"
+            exit 1
         uses: actions/upload-artifact@v4
         with:
           name: محرر-محمد-القاضي-الشامل-APK
