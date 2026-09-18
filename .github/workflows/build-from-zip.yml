@@ -12,10 +12,10 @@ jobs:
 
     steps:
       - name: جلب المشروع
-        uses: actions/checkout@v7
+        uses: actions/checkout@v4
 
       - name: إعداد Java 17
-        uses: actions/setup-java@v6
+        uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
@@ -75,7 +75,6 @@ jobs:
           set -e
 
           wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
-
           unzip -q gradle-8.10.2-bin.zip
 
           echo "$GITHUB_WORKSPACE/gradle-8.10.2/bin" >> "$GITHUB_PATH"
@@ -121,42 +120,46 @@ jobs:
           PY
 
       - name: بناء APK
+        id: build
         working-directory: ${{ env.PROJECT_DIR }}
+        continue-on-error: true
         run: |
-          gradle --no-daemon --stacktrace :app:assembleDebug
+          set +e
+
+          gradle --no-daemon --stacktrace :app:assembleDebug 2>&1 | tee build.log
+
+          CODE=${PIPESTATUS[0]}
+
+          echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
+
+          exit 0
+
+      - name: رفع سجل البناء
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: سجل-خطأ-البناء
+          path: ${{ env.PROJECT_DIR }}/build.log
+          if-no-files-found: warn
 
       - name: التحقق من APK
+        if: steps.build.outputs.exit_code == '0'
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           test -s app/build/outputs/apk/debug/app-debug.apk
           echo "تم إنشاء APK بنجاح"
 
-      -        - name: بناء APK
-          id: build
-          working-directory: ${{ env.PROJECT_DIR }}
-          continue-on-error: true
-          run: |
-            set +e
-            gradle --no-daemon --stacktrace :app:assembleDebug 2>&1 | tee build.log
-            CODE=${PIPESTATUS[0]}
-            echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
-            exit 0
-
-        - name: رفع سجل الخطأ
-          if: always()
-          uses: actions/upload-artifact@v4
-          with:
-            name: سجل-خطأ-البناء
-            path: ${{ env.PROJECT_DIR }}/build.log
-            if-no-files-found: warn
-
-        - name: إيقاف البناء إذا فشل Gradle
-          if: steps.build.outputs.exit_code != '0'
-          run: |
-            echo "Gradle فشل برمز: ${{ steps.build.outputs.exit_code }}"
-            exit 1
+      - name: رفع APK
+        if: steps.build.outputs.exit_code == '0'
         uses: actions/upload-artifact@v4
         with:
           name: محرر-محمد-القاضي-الشامل-APK
           path: ${{ env.PROJECT_DIR }}/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
+      - name: إظهار نتيجة البناء
+        if: steps.build.outputs.exit_code != '0'
+        run: |
+          echo "فشل بناء APK"
+          echo "رمز الخطأ: ${{ steps.build.outputs.exit_code }}"
+          exit 1
