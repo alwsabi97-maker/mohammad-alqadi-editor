@@ -28,13 +28,7 @@ jobs:
           sdkmanager --licenses >/dev/null || true
           sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
-      - name: إعداد Gradle
-        uses: gradle/actions/setup-gradle@v6
-        with:
-          gradle-version: '8.10.2'
-          cache-provider: basic
-
-      - name: فك ملف المشروع
+      - name: فك ملف ZIP
         run: |
           set -e
 
@@ -45,7 +39,7 @@ jobs:
             exit 1
           fi
 
-          echo "تم العثور على: $ZIP_FILE"
+          echo "ملف ZIP: $ZIP_FILE"
 
           rm -rf extracted
           mkdir -p extracted
@@ -55,12 +49,12 @@ jobs:
           PROJECT_DIR="$(find extracted -type f -name 'settings.gradle' -printf '%h\n' | head -n 1)"
 
           if [ -z "$PROJECT_DIR" ]; then
-            echo "لم يتم العثور على مشروع Android"
-            find extracted -maxdepth 4 -type f | head -100
+            echo "لم يتم العثور على مشروع Android داخل ZIP"
+            find extracted -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          echo "المشروع: $PROJECT_DIR"
+          echo "مجلد المشروع: $PROJECT_DIR"
           echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
       - name: فحص ملفات المشروع
@@ -75,6 +69,18 @@ jobs:
           test -f "$PROJECT_DIR/app/src/main/res/layout/activity_main.xml"
 
           echo "فحص ملفات المشروع ناجح"
+
+      - name: تثبيت Gradle 8.10.2
+        run: |
+          set -e
+
+          wget -q https://services.gradle.org/distributions/gradle-8.10.2-bin.zip
+
+          unzip -q gradle-8.10.2-bin.zip
+
+          echo "$GITHUB_WORKSPACE/gradle-8.10.2/bin" >> "$GITHUB_PATH"
+
+          gradle --version
 
       - name: فحص معرفات الواجهة
         run: |
@@ -114,7 +120,7 @@ jobs:
           print("عدد المعرفات:", len(java_ids))
           PY
 
-      - name: بناء APK Debug
+      - name: بناء APK
         working-directory: ${{ env.PROJECT_DIR }}
         run: |
           gradle --no-daemon --stacktrace :app:assembleDebug
