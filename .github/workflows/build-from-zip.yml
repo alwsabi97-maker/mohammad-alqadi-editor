@@ -133,7 +133,14 @@ jobs:
           echo "exit_code=$CODE" >> "$GITHUB_OUTPUT"
 
           exit 0
-
+      - name: عرض سبب خطأ البناء
+        if: steps.build.outputs.exit_code != '0'
+        working-directory: ${{ env.PROJECT_DIR }}
+        run: |
+          echo "========== سبب فشل البناء =========="
+          grep -n -E "FAILURE:|What went wrong|Caused by:|error:|Error:" build.log | head -50 || true
+          echo "========== آخر 80 سطرًا =========="
+          tail -80 build.log
       - name: رفع سجل البناء
         if: always()
         uses: actions/upload-artifact@v4
